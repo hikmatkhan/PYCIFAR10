@@ -18,6 +18,9 @@ def lr_scheduler(args, optimizer):
         lr_schedular_arg["gamma"] = args.gamma
     elif args.lr_scheduler in ["ReduceLROnPlateau"]:
         lr_schedular_arg["mode"] = args.metric
+        lr_schedular_arg["patience"] = args.patience
+        lr_schedular_arg["min_lr"] = args.min_lr
+        lr_schedular_arg["factor"] = args.factor
     else:
         print("LR Scheduler didn't select.")
         raise AssertionError()
@@ -46,6 +49,14 @@ def optimizer(model, args):
 
 
 def init_wandb(args, model=None):
-    wandb.init(project=args.wand_project, entity=args.username, reinit=True)
-    if model is not None:
-        wandb.watch(model, log_freq=10)
+    if args.wandb_log:
+        import wandb
+        wandb.init(project=args.wand_project, entity=args.username, reinit=True)
+        wandb.config.update(args)
+        if model is not None:
+            wandb.watch(model, log_freq=10)
+
+
+def log_on_wandb(args, log_dict):
+    if args.wandb_log:
+        wandb.log(log_dict)

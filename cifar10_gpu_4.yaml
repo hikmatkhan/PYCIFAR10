@@ -1,0 +1,76 @@
+
+#wandb: Run sweep agent with: wandb agent hikmatkhan-/PYCIFAR10/plz41s2l
+
+#wandb: Creating sweep from: ./cifar10_gpu_4.yaml
+#wandb: Created sweep with ID: qi17rlc4
+#wandb: View sweep at: https://wandb.ai/hikmatkhan-/PYCIFAR10/sweeps/qi17rlc4
+#wandb: Run sweep agent with: wandb agent hikmatkhan-/PYCIFAR10/qi17rlc4
+
+
+
+
+program:
+    main.py
+method: grid
+metric:
+  name: test_accuracy
+  goal: maximize
+
+parameters:
+  gpuid:
+    value: 4
+  lr-scheduler:
+    values: ["CyclicLR", "ReduceLROnPlateau", "ExponentialLR", "MultiStepLR"]
+
+  #Cyclic LR
+  base-lr:
+    value: 1e-05
+  max-lr:
+    value: 0.1
+  step-size-up:
+    value: 10
+  step-size-down:
+    value: 15
+  mode:
+    values: ["exp_range"]#
+
+  #ReduceLROnPlateau
+  min-lr:
+    value: 1e-05
+  patience:
+    values: [3]
+  factor:
+    values: [0.9]
+
+  #MultiStepLR
+#  milestones:
+#    value: [100, 200, 300, 400, 500, 600, 700, 800, 900]
+
+  gamma:
+    value: 0.95
+  optimizer:
+    values: ["SGD"]#, "Adam", "RMSprop", "amsgrad", "Adadelta", "Adagrad", "Adamax"]
+  wand-project:
+    value: "PYCIFAR10"
+  username:
+    value: "hikmatkhan-"
+  wandb-log:
+    value: 1
+  dataset:
+    value: "CIFAR10"
+  train-aug:
+    values: [0, 1]
+  epochs:
+    value: 256
+  batch-size:
+    values: [256]
+  model-name:
+    values: ["resnet18"]
+
+  # constant lr Optimizer
+  lr:
+    values: [0.001]
+  momentum:
+    values: [0.9]
+  weight-decay:
+    values: [0]

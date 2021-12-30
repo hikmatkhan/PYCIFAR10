@@ -14,51 +14,62 @@ from torchvision import transforms as T, transforms
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR, MultiStepLR, CyclicLR
 import wandb
 
-from utils import lr_scheduler, optimizer
+from utils import lr_scheduler, optimizer, log_on_wandb, init_wandb
+
+# import os
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# # For mutliple devices (GPUs: 4, 5, 6, 7)
+# os.environ["CUDA_VISIBLE_DEVICES"] = "2, 4"
 
 
 def get_args(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gpuid', nargs="+", type=int, default=[0],
+    parser.add_argument('--gpuid', type=int, default=0,
                         help="The list of gpuid, ex:--gpuid 3 1. Negative value means cpu-only")
-    parser.add_argument('--model_name', type=str, default='resnet18', help="The name of actual model for the backbone")
+    parser.add_argument('--model-name', type=str, default='resnet18', help="The name of actual model for the backbone")
     parser.add_argument('--outdir', type=str, default='results', help="Output results directory")
     parser.add_argument('--optimizer', type=str, default='SGD',
                         help="SGD|Adam|RMSprop|amsgrad|Adadelta|Adagrad|Adamax ...")
     parser.add_argument('--dataroot', type=str, default='./data', help="The root folder of dataset or downloaded data")
     parser.add_argument('--dataset', type=str, default='CIFAR10', help="MNIST(default)|CIFAR10|CIFAR100")
-    parser.add_argument('--train_aug', dest='train_aug', default=False, action='store_true',
+    parser.add_argument('--train-aug', type=int, default=1,
                         help="Allow data augmentation during training")
     parser.add_argument('--workers', type=int, default=4, help="#Thread for dataloader")
-    parser.add_argument('--batch_size', type=int, default=1024 * 4)
+    parser.add_argument('--batch-size', type=int, default=1024 * 10)
     parser.add_argument('--seed', type=int, default=101)
 
     # **********************************************************************************************
     # LR Scheduler & Optimizer Parameters
-    parser.add_argument('--lr', type=float, default=0.01, help="Learning rate")
-    parser.add_argument('--max_lr', type=float, default=0.1, help="CyclicLR")
-    parser.add_argument('--base_lr', type=float, default=0.0001, help="CyclicLR")
-    parser.add_argument('--step_size_up', type=int, default=15, help="CyclicLR")
-    parser.add_argument('--step_size_down', type=int, default=25, help="CyclicLR")
-    parser.add_argument('--mode', type=str, default="exp_range",
-                        help="CyclicLR")
-    parser.add_argument('--momentum', type=float, default=0.9)
-    parser.add_argument('--gamma', type=float, default=0.95)
-    parser.add_argument('--lr_scheduler', type=str, default="ExponentialLR",
-                        help="CyclicLR(default)|ReduceLROnPlateau|ExponentialLR|MultiStepLR")
-    parser.add_argument("--patience", type=float, default=0)
-    parser.add_argument('--weight_decay', type=float, default=0)
-    parser.add_argument('--milestones', nargs="+", type=int, default=[1, 2, 4],
-                        help="MultiStepLR")
+    parser.add_argument('--lr', type=float, default=0.01, help="Optimizer Learning rate")
+    parser.add_argument('--max-lr', type=float, default=0.1, help="CyclicLR")
+    parser.add_argument('--base-lr', type=float, default=0.0001, help="CyclicLR")
+    parser.add_argument('--step-size-up', type=int, default=15, help="CyclicLR")
+    parser.add_argument('--step-size-down', type=int, default=25, help="CyclicLR")
+    parser.add_argument('--mode', type=str, default="exp_range", help="CyclicLR")
+
+    parser.add_argument('--min-lr', type=float, default=0.1, help="ReduceLROnPlateau")
+    parser.add_argument('--factor', type=float, default=0.9, help="ReduceLROnPlateau")
+    parser.add_argument("--patience", type=float, default=0, help="Shared (ReduceLROnPlateau)")
     parser.add_argument('--metric', type=str, default="min", help="mode of the ReduceLROnPlateau")
+
+
+    parser.add_argument('--momentum', type=float, default=0.9)
+    parser.add_argument('--gamma', type=float, default=0.95, help="Shared")
+    parser.add_argument('--lr-scheduler', type=str, default="MultiStepLR",
+                        help="CyclicLR(default)|ReduceLROnPlateau|ExponentialLR|MultiStepLR")
+
+    parser.add_argument('--weight-decay', type=float, default=0, help="Shared")
+    parser.add_argument('--milestones', nargs="+", type=int, default=[20, 40, 80],
+                        help="MultiStepLR")
+
     # **********************************************************************************************
 
     parser.add_argument('--epochs', type=int, default=10,
                         help="The number of epoches")
-    parser.add_argument('--print_freq', type=float, default=100, help="Print the log at every x iteration")
-    parser.add_argument('--model_weights', type=str, default=None,
+    parser.add_argument('--print-freq', type=float, default=100, help="Print the log at every x iteration")
+    parser.add_argument('--model-weights', type=str, default=None,
                         help="The path to the file for the model weights (*.pth).")
-    parser.add_argument('--eval_on_train_set', dest='eval_on_train_set', default=False, action='store_true',
+    parser.add_argument('--eval-on-train-set', dest='eval_on_train_set', default=False, action='store_true',
                         help="Force the evaluation on train set")
     parser.add_argument('--repeat', type=int, default=1, help="Repeat the experiment N times")
 
@@ -68,7 +79,7 @@ def get_args(argv):
                         help='Project name.')
     parser.add_argument('--username', type=str, default="hikmatkhan-",
                         help='Username')
-    parser.add_argument('--wandb-log', type=int, default=1,
+    parser.add_argument('--wandb-log', type=int, default=0,
                         help='If True then logs will be reported on wandb.')
     # **********************************************************************************************
     args = parser.parse_args(argv)
@@ -106,17 +117,20 @@ def accuracy(net, loader, gpu):
     return 100 * correct / total
 
 
+
+
 if __name__ == '__main__':
     args = get_args(sys.argv[1:])
-    print("H" * 100)
+    # print("H" * 100)
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
         os.makedirs(os.path.join(os.getcwd(), args.outdir, args.model_name))
 
     model = cifar10_models.resnet.__dict__[args.model_name]({})
     model_ref = cifar10_models.resnet.__dict__[args.model_name]({"pretrained": True})
-
+    init_wandb(args, model)
     normalize = transforms.Normalize(mean=[0.491, 0.482, 0.447], std=[0.247, 0.243, 0.262])
+
     if args.train_aug:
         print("With data augmentation.")
         train_transform = transforms.Compose([
@@ -151,8 +165,8 @@ if __name__ == '__main__':
     #                         mode="exp_range")  # mode (str) – One of {triangular, triangular2, exp_range}
     loss_fn = CrossEntropyLoss()
 
-    if args.gpuid[0] >= 0:
-        torch.cuda.set_device(args.gpuid[0])
+    if args.gpuid >= 0:
+        torch.cuda.set_device(args.gpuid)
         model = model.cuda()
         model_ref = model_ref.cuda()
         loss_fn = loss_fn.cuda()
@@ -164,6 +178,7 @@ if __name__ == '__main__':
         args.seed = r
         fix_seeds(seed=args.seed)
         for e in range(0, args.epochs):
+            avg_train_loss = 0
             for i, (x, y) in enumerate(trainloader):
                 # print(x.size(), " ", y.size(), " ", i)
                 x, y = (x.cuda(), y.cuda()) if gpu else (x, y)
@@ -174,10 +189,24 @@ if __name__ == '__main__':
                 optimizr.step()
 
                 # if i % args.print_freq == 0:
-                print("Repeat: ", r, " Epoch:", e, " Loss:", loss.item())
+                print("I:", i, " Repeat: ", r, " Epoch:", e, " Loss:", loss.item())
+                avg_train_loss += loss.detach().item()
+                log_on_wandb(args, {"train_b_loss": loss.item()})
+            # break
+            avg_train_loss = avg_train_loss / (i + 1)
             print("*" * 100)
+            print("avg_train_loss=", avg_train_loss)
             print("My model accuracy:", accuracy(model, testloader, gpu))
+            log_on_wandb(args, {"test_accuracy": accuracy(model, testloader, gpu)})
             print("Ref model accuracy:", accuracy(model_ref, testloader, gpu))
+            log_on_wandb(args, {"ref_test_accuracy": accuracy(model_ref, testloader, gpu)})
             print("LR:", optimizr.param_groups[0]["lr"])
+            log_on_wandb(args, {"lr": optimizr.param_groups[0]["lr"]})
+            log_on_wandb(args, {"avg_train_loss": avg_train_loss})
             print("*" * 100)
-            lr_schedulr.step()
+            if isinstance(lr_schedulr, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                print("ReduceLROnPlateau")
+                lr_schedulr.step(avg_train_loss)
+            else:
+                lr_schedulr.step()
+
